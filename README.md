@@ -33,7 +33,7 @@ Then add to your `opencode.json`:
 - Implements the OAuth PKCE flow directly against Anthropic's auth endpoints
 - Opens your browser for authentication — you log in with your Claude account
 - Exchanges the authorization code for access + refresh tokens
-- OpenCode stores the tokens and handles refresh automatically
+- **Auto-refreshes tokens** when they expire — no manual re-auth needed
 - Sets the required API headers on Anthropic requests
 
 ## Environment variable overrides

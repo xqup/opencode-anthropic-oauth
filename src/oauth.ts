@@ -21,7 +21,7 @@ const USER_AGENT =
   `claude-cli/${CLI_VERSION} (external, cli)`
 const BETA_FLAGS =
   process.env.ANTHROPIC_BETA_FLAGS ||
-  "interleaved-thinking-2025-04-14,fine-grained-tool-streaming-2025-05-14,oauth-2025-04-20"
+  "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,oauth-2025-04-20"
 
 export { USER_AGENT, BETA_FLAGS }
 
