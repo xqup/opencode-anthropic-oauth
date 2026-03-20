@@ -7,8 +7,25 @@ const REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
 const SCOPES = "org:create_api_key user:profile user:inference"
 
 const CLI_VERSION = "2.1.80"
-const TOKEN_USER_AGENT = "anthropic"
-const API_USER_AGENT = `claude-cli/${CLI_VERSION} (external, cli)`
+const CLI_USER_AGENT = `claude-cli/${CLI_VERSION} (external, cli)`
+const API_USER_AGENT = CLI_USER_AGENT
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 3,
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(url, init)
+    if (res.status === 429 && i < retries - 1) {
+      const delay = (i + 1) * 2000 // 2s, 4s, 6s
+      await new Promise((r) => setTimeout(r, delay))
+      continue
+    }
+    return res
+  }
+  return fetch(url, init)
+}
 
 export interface OAuthTokens {
   access: string
@@ -73,11 +90,11 @@ export async function exchangeCodeForTokens(
     state: verifier,
   })
 
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithRetry(TOKEN_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": TOKEN_USER_AGENT,
+      "User-Agent": CLI_USER_AGENT,
     },
     body: body.toString(),
   })
@@ -111,11 +128,11 @@ export async function refreshTokens(
     client_id: CLIENT_ID,
   })
 
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithRetry(TOKEN_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": TOKEN_USER_AGENT,
+      "User-Agent": CLI_USER_AGENT,
     },
     body: body.toString(),
   })
