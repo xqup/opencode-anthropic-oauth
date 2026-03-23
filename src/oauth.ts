@@ -7,21 +7,21 @@ const AUTHORIZE_URL =
   process.env.ANTHROPIC_AUTHORIZE_URL || "https://claude.ai/oauth/authorize"
 const TOKEN_URL =
   process.env.ANTHROPIC_TOKEN_URL ||
-  "https://console.anthropic.com/v1/oauth/token"
+  "https://platform.claude.com/v1/oauth/token"
 const REDIRECT_URI =
   process.env.ANTHROPIC_REDIRECT_URI ||
-  "https://console.anthropic.com/oauth/code/callback"
+  "https://platform.claude.com/oauth/code/callback"
 const SCOPES =
   process.env.ANTHROPIC_SCOPES ||
-  "org:create_api_key user:profile user:inference"
+  "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 
-const CLI_VERSION = process.env.ANTHROPIC_CLI_VERSION || "2.1.80"
+const CLI_VERSION = process.env.ANTHROPIC_CLI_VERSION || "2.1.81"
 const USER_AGENT =
   process.env.ANTHROPIC_USER_AGENT ||
   `claude-cli/${CLI_VERSION} (external, cli)`
 const BETA_FLAGS =
   process.env.ANTHROPIC_BETA_FLAGS ||
-  "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,oauth-2025-04-20"
+  "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24"
 
 export { USER_AGENT, BETA_FLAGS }
 
