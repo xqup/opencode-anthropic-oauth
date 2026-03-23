@@ -35,6 +35,23 @@ Then add to your `opencode.json`:
 - Exchanges the authorization code for access + refresh tokens
 - **Auto-refreshes tokens** when they expire — no manual re-auth needed
 - Sets the required API headers on Anthropic requests
+- **Preserves prompt caching** for efficient token usage
+
+## Changelog
+
+### 0.4.1
+- **Fixed high token consumption** — removed `cache_control` stripping that was disabling prompt caching
+- Added `x-anthropic-billing-header` for proper token tracking
+- Aligned beta flags with official Claude CLI plugin
+
+### 0.4.0
+- Added `?beta=true` URL parameter for OAuth compatibility
+- Injected system identity prefix for claude-code beta
+- Stripped `cache_control` (now removed in 0.4.1)
+
+### 0.3.0
+- Added auto token refresh via loader hook
+- Background proactive refresh timer (5min intervals)
 
 ## Environment variable overrides
 

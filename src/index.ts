@@ -11,6 +11,15 @@ const REFRESH_INTERVAL = 5 * 60 * 1000 // check every 5 minutes
 const REFRESH_BUFFER = 10 * 60 * 1000 // refresh 10 min before expiry
 const SYSTEM_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude."
+const DEFAULT_CC_VERSION = "2.1.80"
+
+function getCliVersion(): string {
+  return process.env.ANTHROPIC_CLI_VERSION ?? DEFAULT_CC_VERSION
+}
+
+function getBillingHeader(modelId: string): string {
+  return `cc_version=${getCliVersion()}.${modelId}; cc_entrypoint=cli; cch=00000;`
+}
 
 const plugin: Plugin = async ({ client }) => {
   // Shared ref to getAuth — set when loader runs, used by background timer
@@ -95,12 +104,12 @@ const plugin: Plugin = async ({ client }) => {
             // Build headers
             const headers = new Headers()
             if (input instanceof Request) {
-              input.headers.forEach((v, k) => headers.set(k, v))
+              input.headers.forEach((v, k) => { headers.set(k, v) })
             }
             if (init?.headers) {
               const h = init.headers
               if (h instanceof Headers) {
-                h.forEach((v, k) => headers.set(k, v))
+                h.forEach((v, k) => { headers.set(k, v) })
               } else if (Array.isArray(h)) {
                 for (const [k, v] of h) {
                   if (v !== undefined) headers.set(k, String(v))
@@ -120,11 +129,20 @@ const plugin: Plugin = async ({ client }) => {
             const required = BETA_FLAGS.split(",").map((b) => b.trim())
             const merged = [...new Set([...required, ...incoming])].join(",")
 
+            // Extract model ID for billing header
+            let modelId = "unknown"
+            if (typeof init?.body === "string") {
+              try {
+                modelId = (JSON.parse(init.body) as { model?: string }).model ?? "unknown"
+              } catch {}
+            }
+
             headers.set("authorization", `Bearer ${access}`)
             headers.set("anthropic-beta", merged)
             headers.set("anthropic-dangerous-direct-browser-access", "true")
             headers.set("user-agent", USER_AGENT)
             headers.set("x-app", "cli")
+            headers.set("x-anthropic-billing-header", getBillingHeader(modelId))
             headers.delete("x-api-key")
 
             // Add ?beta=true to messages endpoint (required for OAuth)
@@ -156,19 +174,7 @@ const plugin: Plugin = async ({ client }) => {
                   parsed.system = [{ type: "text", text: SYSTEM_IDENTITY }]
                 }
 
-                // Strip cache_control (OAuth rejects it since 2026-03-17)
-                const strip = (obj: any): any => {
-                  if (Array.isArray(obj)) return obj.map(strip)
-                  if (obj && typeof obj === "object") {
-                    const { cache_control, ...rest } = obj
-                    return Object.fromEntries(
-                      Object.entries(rest).map(([k, v]) => [k, strip(v)]),
-                    )
-                  }
-                  return obj
-                }
-
-                body = JSON.stringify(strip(parsed))
+                body = JSON.stringify(parsed)
               } catch {
                 // leave body as-is
               }
