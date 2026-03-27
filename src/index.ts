@@ -7,6 +7,79 @@ import {
   BETA_FLAGS,
 } from "./oauth.js"
 
+const TOOL_PREFIX = "mcp_"
+
+function transformBody(body: BodyInit | null | undefined): BodyInit | null | undefined {
+  if (typeof body !== "string") return body
+  try {
+    const parsed = JSON.parse(body) as {
+      tools?: Array<{ name?: string } & Record<string, unknown>>
+      messages?: Array<{ content?: Array<Record<string, unknown>> }>
+    }
+    if (Array.isArray(parsed.tools)) {
+      parsed.tools = parsed.tools.map((tool) => ({
+        ...tool,
+        name: tool.name ? `${TOOL_PREFIX}${tool.name}` : tool.name,
+      }))
+    }
+    if (Array.isArray(parsed.messages)) {
+      parsed.messages = parsed.messages.map((message) => {
+        if (!Array.isArray(message.content)) return message
+        return {
+          ...message,
+          content: message.content.map((block) => {
+            if (block.type !== "tool_use" || typeof block.name !== "string") return block
+            return { ...block, name: `${TOOL_PREFIX}${block.name}` }
+          }),
+        }
+      })
+    }
+    return JSON.stringify(parsed)
+  } catch {
+    return body
+  }
+}
+
+function stripToolPrefix(text: string): string {
+  return text.replace(/"name"\s*:\s*"mcp_([^"]+)"/g, '"name": "$1"')
+}
+
+function transformResponseStream(response: Response): Response {
+  if (!response.body) return response
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let buffer = ""
+  const stream = new ReadableStream({
+    async pull(controller) {
+      for (;;) {
+        const boundary = buffer.indexOf("\n\n")
+        if (boundary !== -1) {
+          const completeEvent = buffer.slice(0, boundary + 2)
+          buffer = buffer.slice(boundary + 2)
+          controller.enqueue(encoder.encode(stripToolPrefix(completeEvent)))
+          return
+        }
+        const { done, value } = await reader.read()
+        if (done) {
+          if (buffer) {
+            controller.enqueue(encoder.encode(stripToolPrefix(buffer)))
+            buffer = ""
+          }
+          controller.close()
+          return
+        }
+        buffer += decoder.decode(value, { stream: true })
+      }
+    },
+  })
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
+
 const REFRESH_INTERVAL = 5 * 60 * 1000 // check every 5 minutes
 const REFRESH_BUFFER = 10 * 60 * 1000 // refresh 10 min before expiry
 const SYSTEM_IDENTITY =
@@ -19,6 +92,29 @@ function getCliVersion(): string {
 
 function getBillingHeader(modelId: string): string {
   return `cc_version=${getCliVersion()}.${modelId}; cc_entrypoint=cli; cch=00000;`
+}
+
+const MAX_RETRY_DELAY_S = 20 // cap retry-after to avoid 400s+ waits
+
+async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  retries = 3,
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(input, init)
+    if ((res.status === 429 || res.status === 529) && i < retries - 1) {
+      const retryAfter = res.headers.get("retry-after")
+      const parsed = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN
+      const delay = Number.isNaN(parsed)
+        ? (i + 1) * 2000
+        : Math.min(parsed, MAX_RETRY_DELAY_S) * 1000
+      await new Promise((r) => setTimeout(r, delay))
+      continue
+    }
+    return res
+  }
+  return fetch(input, init)
 }
 
 const plugin: Plugin = async ({ client }) => {
@@ -153,14 +249,21 @@ const plugin: Plugin = async ({ client }) => {
               url = `${url}${sep}beta=true`
             }
 
-            // Transform body for OAuth compatibility
+            // Transform body: inject system identity + prefix tool names with mcp_
             let body = init?.body
             if (typeof body === "string" && url.includes("/v1/messages")) {
               try {
                 const parsed = JSON.parse(body)
 
                 // Inject system identity prefix (required by claude-code beta)
-                if (Array.isArray(parsed.system)) {
+                if (typeof parsed.system === "string") {
+                  if (!parsed.system.includes(SYSTEM_IDENTITY)) {
+                    parsed.system = [
+                      { type: "text", text: SYSTEM_IDENTITY },
+                      { type: "text", text: parsed.system },
+                    ]
+                  }
+                } else if (Array.isArray(parsed.system)) {
                   const hasIdentity = parsed.system.some(
                     (s: any) =>
                       typeof s === "string"
@@ -180,12 +283,17 @@ const plugin: Plugin = async ({ client }) => {
               }
             }
 
-            return fetch(url, {
+            // Prefix tool names with mcp_ (required for proper routing)
+            body = transformBody(body) ?? body
+
+            const response = await fetchWithRetry(url, {
               method: init?.method ?? "POST",
               headers,
               body,
               signal: init?.signal,
             })
+
+            return transformResponseStream(response)
           },
         }
       },
